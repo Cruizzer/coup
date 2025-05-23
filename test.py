@@ -19,7 +19,7 @@ class Player:
         self.alive = True
 
     def is_alive(self):
-        return len(self.cards) > 0
+        return self.alive
 
     def lose_influence(self, card_to_lose=None):
         if card_to_lose and card_to_lose in self.cards:
@@ -89,76 +89,57 @@ class GameState:
             return self.get_alive_players()[0].id
         return None
 
-    def challenge(self, challenger_id, target_id, claimed_card):
+    def challenge(self, challenger_id, target_id, target_claim):
         target = self.players[target_id]
         challenger = self.players[challenger_id]
-        print(f"Player {challenger_id} challenges Player {target_id}'s claim of {claimed_card}.")
-        if claimed_card in target.cards:
-            print(f"Challenge failed! Player {target_id} had {claimed_card}.")
+        print(f"Player {challenger_id} challenges Player {target_id}'s claim of {target_claim}.")
+        if target_claim in target.cards:
+            print(f"Challenge failed! Player {target_id} had {target_claim}.")
             challenger.lose_influence()
-            try:
-                target.cards.remove(claimed_card)
+            try: # This except should be removed since it should be impossible (can only happen if self-challenge?)
+                target.cards.remove(target_claim)
             except ValueError:
-                print(f"WARNING: {claimed_card} not in Player {target_id}'s hand during challenge resolution.")
-                return True
-            self.deck.append(claimed_card)
+                print(f"WARNING: {target_claim} not in Player {target_id}'s hand during challenge resolution.")
+                return False
+            self.deck.append(target_claim)
             random.shuffle(self.deck)
             target.cards.append(self.deck.pop())
-            return True
-        else:
-            print(f"Challenge successful! Player {target_id} did not have {claimed_card}.")
-            target.lose_influence()
             return False
+        else:
+            print(f"Challenge successful! Player {target_id} did not have {target_claim}.")
+            target.lose_influence()
+            return True
 
-    def block_action(self, blocker_id, action, challenger_id=None):
-        required_card = None
-        if action == Action.FOREIGN_AID:
-            required_card = Card.DUKE
-        elif action == Action.ASSASSINATE:
-            required_card = Card.CONTESSA
-        elif action == Action.STEAL:
-            required_card = Card.CAPTAIN
+    # def block_action(self, blocker_id, action, challenger_id=None):
+    #     required_card = None
+    #     if action == Action.FOREIGN_AID:
+    #         required_card = Card.DUKE
+    #     elif action == Action.ASSASSINATE:
+    #         required_card = Card.CONTESSA
+    #     elif action == Action.STEAL:
+    #         required_card = Card.CAPTAIN
 
-        if challenger_id is not None:
-            return self.challenge(challenger_id, blocker_id, required_card)
+    #     if challenger_id is not None:
+    #         return self.challenge(challenger_id, blocker_id, required_card)
 
-        print(f"Player {blocker_id} blocks action {action} using {required_card}.")
-        return True
+    #     print(f"Player {blocker_id} blocks action {action} using {required_card}.")
+    #     return True
 
-    def perform_action(self, player_id, action, target_id=None, claim_card=None, block_by=None, challenged_by=None):
+    def perform_action(self, player_id, action, target_id=None):
         player = self.players[player_id]
         if not player.is_alive():
             return False
 
         if action in Action.PRIMARY_ACTIONS:
-            print(f"Player {player_id} attempts to perform {action}" + 
+            print(f"Player {player_id} performs {action}" + 
                 (f" on Player {target_id}" if target_id is not None else "") + 
-                (f" claiming {claim_card}" if claim_card else "") + 
                 f" | Coins: {player.coins}")
 
-        action_valid = True
-        if challenged_by is not None and claim_card:
-            action_valid = self.challenge(challenged_by, player_id, claim_card)
-            if not action_valid:
-                self.history.append((challenged_by, Action.CHALLENGE, player_id, claim_card))
-                self.next_player()
-                return False
+        # self.history.append((challenged_by, Action.CHALLENGE, player_id, claim_card))
+        # self.next_player()
 
-        if block_by is not None:
-            # Ensure only valid targets can block actions affecting them
-            if action in [Action.STEAL, Action.ASSASSINATE] and block_by != target_id:
-                block_by = None
-            if action == Action.FOREIGN_AID and block_by == player_id:
-                block_by = None
 
-        if block_by is not None:
-            block_valid = self.block_action(block_by, action, challenged_by)
-            if block_valid:
-                print(f"Action {action} by Player {player_id} was blocked by Player {block_by}.")
-                self.next_player()
-                return False
-
-        print(f"Player {player_id} performs {action}" + (f" on Player {target_id}" if target_id is not None else "") + (f" claiming {claim_card}" if claim_card else ""))
+        # print(f"Player {player_id} performs {action}" + (f" on Player {target_id}" if target_id is not None else ""))
 
         if action == Action.INCOME:
             player.coins += 1
@@ -194,11 +175,6 @@ class GameState:
             print(f"Player {player_id}'s new hand after exchange: {player.cards}")
 
 
-
-
-        self.history.append((player_id, action, target_id, claim_card))
-        self.next_player()
-
         print("----")
 
         return True
@@ -226,6 +202,36 @@ class GameState:
 
         return actions
     
+# def challenge(self, challenger_id, target_id, target_claim):
+#     target = self.players[target_id]
+#     challenger = self.players[challenger_id]
+#     print(f"Player {challenger_id} challenges Player {target_id}'s claim of {target_claim}.")
+#     if target_claim in target.cards:
+#         print(f"Challenge failed! Player {target_id} had {target_claim}.")
+#         challenger.lose_influence()
+#         try: # This except should be removed since it should be impossible (can only happen if self-challenge?)
+#             target.cards.remove(target_claim)
+#         except ValueError:
+#             print(f"WARNING: {target_claim} not in Player {target_id}'s hand during challenge resolution.")
+#             return True
+#         self.deck.append(target_claim)
+#         random.shuffle(self.deck)
+#         target.cards.append(self.deck.pop())
+#         return True
+#     else:
+#         print(f"Challenge successful! Player {target_id} did not have {target_claim}.")
+#         target.lose_influence()
+#         return False
+
+def block_foreign_aid(blocker_id, target_id):
+    print(f"Player {blocker_id} blocks foreign aid from {target_id} using Duke.")
+    return
+
+
+def counteract(counter_card_claim, player_id):
+    print(f"Player {player_id} counteracts with: {counter_card_claim}")
+    return
+
 
 def simulate_random_game(num_players=3):
     game = GameState(num_players)
@@ -239,6 +245,8 @@ def simulate_random_game(num_players=3):
         legal_actions = game.get_legal_actions(player_id)
         action = random.choice(legal_actions)
 
+        print(legal_actions)
+
         target_id = None
         if action in [Action.ASSASSINATE, Action.STEAL, Action.COUP]:
             if action == Action.STEAL:
@@ -251,47 +259,129 @@ def simulate_random_game(num_players=3):
                 # Skip this action if no valid targets
                 continue
 
-
+        # Tax and exchange do not have a target_id, while the other actions do.
         claim_card = None
         if action == Action.TAX:
             claim_card = Card.DUKE
+        elif action == Action.EXCHANGE:
+            claim_card = Card.AMBASSADOR
         elif action == Action.ASSASSINATE:
             claim_card = Card.ASSASSIN
         elif action == Action.STEAL:
             claim_card = Card.CAPTAIN
-        elif action == Action.EXCHANGE:
-            claim_card = Card.AMBASSADOR
+            # claim_card = Card.CAPTAIN or Card.AMBASSADOR
 
-        block_by = None
+        # Above is all good.
+
+
+        # A challenge is being definde as whether the initial action can go to completion uninterrupted.
+        # The only actions in the game that cannot be challenged are income and coup.
+        # There is a 30% chance for any action to be challenged, and a random player is picked among all alive.
         challenged_by = None
-
-        if action == Action.FOREIGN_AID and random.random() < 0.3:
-            block_candidates = [p.id for p in game.players if p.id != player_id and p.is_alive()]
-            if block_candidates:
-                block_by = random.choice(block_candidates)
-                challengers = [p.id for p in game.players if p.id != block_by and p.is_alive()]
-                if challengers and random.random() < 0.5:
-                    challenged_by = random.choice(challengers)
-
-        elif action == Action.ASSASSINATE and target_id is not None and random.random() < 0.3:
-            block_by = target_id
-            challengers = [p.id for p in game.players if p.id != block_by and p.is_alive()]
-            if challengers and random.random() < 0.5:
+        challenged_status = 0
+        if action != (Action.INCOME or Action.COUP):
+            if random.random() < 0.3:
+                challengers = [p.id for p in game.players if p.id != player_id and p.is_alive()]
                 challenged_by = random.choice(challengers)
 
-        elif action == Action.STEAL and target_id is not None and random.random() < 0.3:
-            block_by = target_id
-            challengers = [p.id for p in game.players if p.id != block_by and p.is_alive()]
-            if challengers and random.random() < 0.5:
-                challenged_by = random.choice(challengers)
 
-        elif claim_card and random.random() < 0.3:
-            challengers = [p.id for p in game.players if p.is_alive()]
-            if challengers:
-                challenged_by = random.choice(challengers)
+        # Foreign aid has a unique interaction since it doesn't require a claim card.
+        if challenged_by is not None:
+            print(f'Player {player_id} attempts to perform {action}.')
+            
+            if action == Action.FOREIGN_AID:
+                # 30% chance someone calls out the Duke, otherwise foreign aid is just blocked.
+                if random.random() < 0.3:
+                    duke_challengers = [p.id for p in game.players if p.id != challenged_by and p.is_alive()]
+                    duke_challenged_by = random.choice(duke_challengers)
 
-        game.perform_action(player_id, action, target_id, claim_card, block_by, challenged_by)
+                    # 30% chance that the Duke claim is challenged, otherwise the block just goes through
+                    foreign_aid_challenge_status = game.challenge(duke_challenged_by, challenged_by, Card.DUKE)
+                    if not foreign_aid_challenge_status:
+                        block_foreign_aid(challenged_by, player_id)
+                        challenged_status = 1
+                else:
+                    print(f'Player {challenged_by} blocked foreign aid to {player_id}.')
+                    block_foreign_aid(challenged_by, player_id)
+                    challenged_status = 1
+                    
+            else:
+                challenged_status = game.challenge(challenged_by, player_id, claim_card)
+
+        # If there is no challenge, then the action goes through the first stage, and now the target must respond.
+        # Assassinate and steal are the only actions that can be responded to.
+        counteracted_challenge_status = 0
+
+        if action == Action.ASSASSINATE and target_id is not None and random.random() < 0.5:
+            # 50% chance the target claims Contessa.
+            counteract(Card.CONTESSA, target_id)
+            if random.random() < 0.5: # 50% chance someone calls out the Contessa counteract ability.
+                challengers = [p.id for p in game.players if p.id != target_id and p.is_alive()]
+                challenged_by = random.choice(challengers)
+                counteracted_challenge_status = game.challenge(challenged_by, target_id, Card.CONTESSA)
+            else:
+                counteract(Card.CONTESSA, target_id)
+                counteracted_challenge_status = 1
+
+        elif action == Action.STEAL and target_id is not None and random.random() < 0.5:
+            if Card.CAPTAIN in player.cards:
+                counteract_card = Card.CAPTAIN
+            elif Card.AMBASSADOR in player.cards:
+                counteract_card = Card.AMBASSADOR
+            else:
+                counteract_card = random.choice([Card.CAPTAIN, Card.AMBASSADOR])
+
+            if random.random() < 0.5: # 50% chance someone calls out the Captain/Ambassador block.
+                challengers = [p.id for p in game.players if p.id != target_id and p.is_alive()]
+                challenged_by = random.choice(challengers)
+                counteracted_challenge_status = game.challenge(challenged_by, target_id, counteract_card)
+            else:
+                counteract(counteract_card, target_id)
+                counteracted_challenge_status = 1
+
+            
+
+
+        # For an action to have its effect, the initial challenge, if any, must have failed.
+        # Also the counteract challenge, if any, must have also  failed.
+        if not challenged_status and not counteracted_challenge_status:
+            game.perform_action(player_id, action, target_id)
+
+        game.history.append((player_id, action, target_id))
+        game.next_player()
+            
+
+        # if action == Action.FOREIGN_AID and random.random() < 0.3:
+        #     block_candidates = [p.id for p in game.players if p.id != player_id and p.is_alive()]
+        #     if block_candidates:
+        #         block_by = random.choice(block_candidates)
+        #         challengers = [p.id for p in game.players if p.id != block_by and p.is_alive()]
+        #         if challengers and random.random() < 0.5:
+        #             challenged_by = random.choice(challengers)
+
+
+
+        # Doesn't hurt to check if target_id is not None, even though it shouldn't be because of earlier check.
+        # elif action == Action.ASSASSINATE and target_id is not None and random.random() < 0.3:
+        #     block_by = target_id
+        #     challengers = [p.id for p in game.players if p.id != block_by and p.is_alive()]
+        #     if challengers and random.random() < 0.5:
+        #         challenged_by = random.choice(challengers)
+
+        # elif action == Action.STEAL and target_id is not None and random.random() < 0.3:
+        #     block_by = target_id
+        #     challengers = [p.id for p in game.players if p.id != block_by and p.is_alive()]
+        #     if challengers and random.random() < 0.5:
+        #         challenged_by = random.choice(challengers)
+
+        # elif claim_card and random.random() < 0.3:
+        #     challengers = [p.id for p in game.players if p.id != player_id and p.is_alive()]
+        #     if challengers:
+        #         challenged_by = random.choice(challengers)
+
+        # game.perform_action(player_id, action, target_id, claim_card, block_by, challenged_by)
 
     print(f"Game over! Winner: Player {game.get_winner()}")
 
-simulate_random_game()
+for i in range(1):
+    simulate_random_game()
