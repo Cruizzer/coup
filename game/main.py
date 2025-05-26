@@ -17,264 +17,207 @@ class Action(Enum):
     EXCHANGE = 10
     STEAL = 11
 
-
 class Player:
     def __init__(self, player_id):
         self.id = player_id
         self.coins = 2
         self.cards = []
+        self.alive = True
 
-    def lose_influence(self, players: list, current_player_idx: int):
-        if len(self.cards) == 1:
-            lost_card = self.cards.pop()
-        else:
-            random_number = random.randint(0, 1)
-            lost_card = self.cards.pop(random_number)
-            
-        print(f"Player {self.id} loses {Card(lost_card).name}. Remaining hand:")
-        print_cards(self.cards)
-        
+    def lose_influence(self):
         if not self.cards:
-            players[self.id] = -1
-            print(f"Player {self.id} has died.")
+            return
+        lost_card = self.cards.pop() if len(self.cards) == 1 else self.cards.pop(random.randint(0, 1))
+        print(f"Player {self.id} loses {lost_card.name}")
+        print("Remaining cards:", end=" ")
+        print_cards(self.cards)
+        if not self.cards:
+            self.alive = False
+            print(f"Player {self.id} has died.\n")
 
     def get_legal_actions(self):
         actions = list(Action)
         if self.coins < 3:
-            actions.remove(Action.ASSASSINATE)
+            actions = [a for a in actions if a != Action.ASSASSINATE]
         if self.coins < 7:
-            actions.remove(Action.COUP)
+            actions = [a for a in actions if a != Action.COUP]
         return actions
-    
-        
-        
-
 
 def print_cards(cards: list, debug=False):
-    for i in range(len(cards)):
-        if debug:
-            print(Card(cards[i]).name, end=" ")
-        else:
-            print(cards[i], end=" ")
+    for card in cards:
+        print(card.name, end=" ")
     print()
-    
 
-def challenge(challenger: Player, action: Action, target: Player, deck:list, current_player_idx: int):
-    claim_card = None
-    if action == Action.TAX:
-        claim_card = Card.DUKE
-    elif action == Action.EXCHANGE:
-        claim_card = Card.AMBASSADOR
-    elif action == Action.ASSASSINATE:
-        claim_card = Card.ASSASSIN
-    elif action == Action.STEAL:
-        claim_card = Card.CAPTAIN
+def challenge(challenger: Player, action: Action, target: Player, deck: list):
+    claim_card = {
+        Action.TAX: Card.DUKE,
+        Action.EXCHANGE: Card.AMBASSADOR,
+        Action.ASSASSINATE: Card.ASSASSIN,
+        Action.STEAL: Card.CAPTAIN
+    }.get(action, None)
 
-    print(f"Player {challenger.id} challenges Player {target.id}'s claim of {Card(claim_card).name}")
+    if not claim_card:
+        return False
+
+    print(f"[DEBUG] Challenged player's cards: {target.cards}, Claim: {claim_card}")
+    print(f"Player {challenger.id} challenges Player {target.id}'s claim of {claim_card.name}")
+
     if claim_card in target.cards:
-        print(f"Challenge failed! Player {target.id} had {claim_card}.")
-        challenger.lose_influence(deck, current_player_idx)
-        random.shuffle(target.cards)
-        card = target.cards.pop()
-        deck.append(card)
+        print(f"Challenge failed! Player {target.id} had {claim_card.name}.")
+        challenger.lose_influence()
+        target.cards.remove(claim_card)
+        deck.append(claim_card)
         random.shuffle(deck)
         target.cards.append(deck.pop())
         return False
     else:
-        print(f"Challenge successful! Player {target.id} did not have {claim_card}.")
-        target.lose_influence(deck, current_player_idx)
-        random.shuffle(challenger.cards)
-        card = challenger.cards.pop()
-        deck.append(card)
-        random.shuffle(deck)
-        challenger.cards.append(deck.pop())
+        print(f"Challenge successful! Player {target.id} did not have {claim_card.name}.")
+        target.lose_influence()
         return True
-    
 
 def counteract(action: Action):
-    counterclaim_card = None
     if action == Action.ASSASSINATE:
-        counterclaim_card = Card.CONTESSA
+        return Card.CONTESSA
     elif action == Action.STEAL:
-        counterclaim_card = random.choice([Card.CAPTAIN, Card.AMBASSADOR])
+        return random.choice([Card.CAPTAIN, Card.AMBASSADOR])
+    elif action == Action.FOREIGN_AID:
+        return Card.DUKE
+    return None
 
-    return counterclaim_card
-
-
-
-def counteract_challenge(challenger: Player, claim_card: Card, target: Player, deck:list, current_player_idx: int):
+def counteract_challenge(challenger: Player, claim_card: Card, target: Player, deck: list):
     if claim_card in target.cards:
-        print(f"Challenge failed! Player {target} had {claim_card}.")
-        challenger.lose_influence(deck, current_player_idx)
-        random.shuffle(target.cards)
-        card = target.cards.pop()
-        deck.append(card)
+        print(f"Challenge failed! Player {target.id} had {claim_card.name}.")
+        challenger.lose_influence()
+        target.cards.remove(claim_card)
+        deck.append(claim_card)
         random.shuffle(deck)
         target.cards.append(deck.pop())
         return False
     else:
-        print(f"Challenge successful! Player {target} did not have {claim_card}.")
-        target.lose_influence(deck, current_player_idx)
-        random.shuffle(challenger.cards)
-        card = challenger.cards.pop()
-        deck.append(card)
-        random.shuffle(deck)
-        challenger.cards.append(deck.pop())
+        print(f"Challenge successful! Player {target.id} did not have {claim_card.name}.")
+        target.lose_influence()
         return True
 
+def perform_action(player: Player, action: Action, target: Player, deck: list):
+    print(f"Player {player.id} performs {action.name}", end="")
+    if target:
+        print(f" on Player {target.id}", end="")
+    print(f" | Coins: {player.coins}")
 
-def perform_action(player: Player, action: Action, target: Player, deck: list, current_player_idx: int):
-
-        if target:
-            print(f"Player {player.id} performs {action}" + 
-                (f" on Player {target.id}") + 
-                f" | Coins: {player.coins}")
-        else:
-            print(f"Player {player.id} performs {action}" + 
-                f" | Coins: {player.coins}")
-
-
-        if action == Action.FOREIGN_AID:
-            player.coins += 2
-        elif action == Action.TAX:
-            player.coins += 3
-        elif action == Action.ASSASSINATE:
-            player.coins -= 3
-            target.lose_influence(deck, current_player_idx)
-        elif action == Action.STEAL:
-            stolen = min(2, target.coins)
-            target.coins -= stolen
-            player.coins += stolen
-        elif action == Action.EXCHANGE:
-            num_to_draw = 2 if len(player.cards) == 2 else 1
-            drawn = [deck.pop() for _ in range(num_to_draw)]
-            print(f"Player {player.id} draws {drawn} using Ambassador.")
-
-            combined = player.cards + drawn
-            random.shuffle(combined)
-            player.cards = combined[:2]
-
-            returned = combined[2:]
-            deck += returned
-            random.shuffle(deck)
-
-            # Output the player's hand after the exchange
-            print(f"Player {player.id}'s new hand after exchange:")
-            print_cards(player.cards)
-
-
-        print("----")
-
+    if action == Action.FOREIGN_AID:
+        player.coins += 2
+    elif action == Action.TAX:
+        player.coins += 3
+    elif action == Action.ASSASSINATE:
+        player.coins -= 3
+        target.lose_influence()
+    elif action == Action.STEAL:
+        stolen = min(2, target.coins)
+        target.coins -= stolen
+        player.coins += stolen
+    elif action == Action.EXCHANGE:
+        num_to_draw = 2 if len(player.cards) == 2 else 1
+        drawn = [deck.pop() for _ in range(num_to_draw)]
+        print(f"Player {player.id} draws {len(drawn)} card(s): {[c.name for c in drawn]}")
+        combined = player.cards + drawn
+        random.shuffle(combined)
+        num_to_keep = len(player.cards)
+        player.cards = combined[:num_to_keep]
+        returned = combined[num_to_keep:]
+        deck.extend(returned)
+        random.shuffle(deck)
+        print(f"Player {player.id}'s new hand after Exchange:")
+        print_cards(player.cards)
+    print("----")
 
 def main():
     num_players = 3
-    deck = [0, 1, 2, 3, 4] * 3
+    deck = [card for card in Card] * 3
     random.shuffle(deck)
-    players = [Player(i) for i in range(num_players)]
 
-    # Initialise hands
-    for i in range(num_players):
-        players[i].cards = [deck.pop(), deck.pop()]
-        print(f"Player {i} starts with:")
-        print_cards(players[i].cards, 1)
+    players = [Player(i) for i in range(num_players)]
+    for player in players:
+        player.cards = [deck.pop(), deck.pop()]
+        print(f"Player {player.id} starts with:")
+        print_cards(player.cards)
     print()
 
     current_player_idx = 0
-    is_ended = 0
 
-    # Game loop: Action, callout, counteraction, callout, effect
-    while not is_ended:
-
-        if sum(x != -1 for x in players) == 1:
-            is_ended = True
-            print(f"Player {current_player_idx - 1} won")
-            continue
-
-        if players[current_player_idx] == -1:
-            current_player_idx += 1
-            continue
+    while True:
+        alive_players = [p for p in players if p.alive]
+        if len(alive_players) == 1:
+            print(f"Player {alive_players[0].id} wins!")
+            return alive_players[0].id
 
         current_player = players[current_player_idx]
-        chosen_action = random.choice(current_player.get_legal_actions())
-        print(f"Player {current_player_idx} chose: {Action(chosen_action).name}")
-        
-        # Select a target player.
-        target_player = None
-        if chosen_action == Action.COUP or chosen_action == Action.ASSASSINATE or chosen_action == Action.STEAL:
-            other_players = [p for p in players if p != current_player and players[p.id] != -1]
-            target_player = random.choice(other_players)
+        if not current_player.alive:
+            current_player_idx = (current_player_idx + 1) % num_players
+            continue
 
+        action = random.choice(current_player.get_legal_actions())
+        print(f"Player {current_player.id} chose: {action.name}")
 
-        if chosen_action == Action.INCOME:
+        target = None
+        if action in [Action.COUP, Action.ASSASSINATE, Action.STEAL]:
+            targets = [p for p in players if p != current_player and p.alive]
+            if targets:
+                target = random.choice(targets)
+
+        if action == Action.INCOME:
             current_player.coins += 1
             current_player_idx = (current_player_idx + 1) % num_players
             continue
-        elif chosen_action == Action.COUP:
+        elif action == Action.COUP:
             current_player.coins -= 7
-            target_player.lose_influence(players, current_player_idx)
+            target.lose_influence()
             current_player_idx = (current_player_idx + 1) % num_players
             continue
 
         challenger = None
-        successful_challenge = None
-
-        # 30% chance of challenging
         if random.random() < 0.3:
-            other_players = [p for p in players if p != current_player and players[p.id] != -1]
-            challenger = random.choice(other_players)
+            challengers = [p for p in players if p != current_player and p.alive]
+            if challengers:
+                challenger = random.choice(challengers)
 
-        if not chosen_action == Action.FOREIGN_AID:
-            if challenger:
-                successful_challenge = challenge(challenger, chosen_action, current_player, deck)
+        successful_challenge = False
+        if challenger:
+            successful_challenge = challenge(challenger, action, current_player, deck)
+            if successful_challenge:
+                current_player_idx = (current_player_idx + 1) % num_players
+                continue
 
-
-        successful_counteract_challenge = None
-        counteract_player = None
+        counteractor = None
         counteract_challenger = None
-        
-        # 30% chance of counteracting. (Maybe specify what actions to reduce computational overhead).
-        if random.random() < 0.3:
-            # Only foreign aid can be counteracted by anyone (even people not included in the action).
-            if chosen_action == Action.FOREIGN_AID:
-                other_players = [p for p in players if p != target_player and players[p.id] != -1]
-                if not other_players:
-                    continue
-                counteract_player = random.choice(other_players)
-            else:
-                counteract_player = target_player
+        counter_claim = None
+        if action in [Action.FOREIGN_AID, Action.ASSASSINATE, Action.STEAL] and random.random() < 0.3:
+            if action == Action.FOREIGN_AID:
+                counteractor = random.choice([p for p in players if p != current_player and p.alive])
+            elif target and target.alive:
+                counteractor = target
 
-            # 60% chance of challenging a counteraction. Anyone can challenge
-            if random.random() < 0.6:
-                other_players = [p for p in players if p != target_player and players[p.id] != -1]
-                if not other_players:
-                    continue
-                counteract_challenger = random.choice(other_players)
+            if counteractor:
+                counter_claim = counteract(action)
+                print(f"Player {counteractor.id} counteracts with {counter_claim.name}")
+                if random.random() < 0.5:
+                    challengers = [p for p in players if p != counteractor and p.alive]
+                    if challengers:
+                        counteract_challenger = random.choice(challengers)
 
+        if counteractor and counteract_challenger:
+            print(f"Player {counteract_challenger.id} challenges counteraction!")
+            if counteract_challenge(counteract_challenger, counter_claim, counteractor, deck):
+                perform_action(current_player, action, target, deck)
+        elif not counteractor:
+            perform_action(current_player, action, target, deck)
 
-        # 30% chance of counteracting either foreign aid, steal, or assassinate.
-        if counteract_player:
-            if chosen_action == Action.FOREIGN_AID:
-                # Anyone can counteract with Duke and anyone can challenge the counteract.
-                print(f"Player {counteract_player.id} counteracted with Duke!")
+        current_player_idx = (current_player_idx + 1) % num_players
 
-                if counteract_challenger:
-                    print(f"Player {counteract_challenger.id} is challenging the Duke claim!")
-                    successful_counteract_challenge = counteract_challenge(counteract_challenger, Card.DUKE, counteract_player, deck)
-
-            elif chosen_action == Action.STEAL or chosen_action == Action.ASSASSINATE:
-                # Only the targetted player can counteract but anyone can challenge the counteract.
-                claim_card = counteract(chosen_action)
-                print(f"Player {target_player.id} counteracted with {claim_card}")
-
-                if counteract_challenger:
-                    print(f"Player {counteract_challenger.id} is challenging the {claim_card} claim!")
-                    successful_counteract_challenge = counteract_challenge(counteract_challenger, claim_card, counteract_player, deck)
-
-        if not successful_challenge and (not counteract_player or successful_counteract_challenge):
-            perform_action(current_player, chosen_action, target_player, deck)
-            current_player_idx = (current_player_idx + 1) % num_players
-        
-    
-
+# Run the game
 main()
 
+# players = [0, 0, 0]
+# for i in range(100000):
+#     player = main()
+#     players[player] += 1
+# print(players)
