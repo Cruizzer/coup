@@ -1,29 +1,16 @@
-import torch
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.env_util import make_vec_env
-from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.logger import configure
+from stable_baselines3.common.env_checker import check_env
 from coup_env import CoupEnv
 
 def train_agent():
-    env = make_vec_env(lambda: Monitor(CoupEnv()), n_envs=1)
+    env = CoupEnv()
+    check_env(env, warn=True)
 
-    model = PPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        n_steps=1024,
-        batch_size=64,
-        gae_lambda=0.95,
-        gamma=0.99,
-        n_epochs=10,
-        ent_coef=0.01,
-        device="cpu"
-    )
-
+    model = PPO("MlpPolicy", env, verbose=1, n_steps=2048, batch_size=64)
     model.learn(total_timesteps=100_000)
-    model.save("ppo_coup")
+
+    model.save("ppo_coup_multiagent")
+    print("Model saved!")
 
 if __name__ == "__main__":
     train_agent()

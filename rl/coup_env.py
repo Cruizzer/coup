@@ -20,6 +20,8 @@ class Action(Enum):
     EXCHANGE = 5
     STEAL = 6
 
+NUM_PLAYERS = 3  # Will increase to more later
+
 class Player:
     def __init__(self, player_id):
         self.id = player_id
@@ -28,13 +30,17 @@ class Player:
         self.alive = True
 
     def lose_influence(self):
-        if not self.cards:
-            return
-        lost_card = self.cards.pop(random.randint(0, len(self.cards)-1))
+        if self.cards:
+            self.cards.pop()
         if not self.cards:
             self.alive = False
 
+    def is_active(self):
+        return self.alive
+
     def get_legal_actions(self):
+        if self.coins >= 10:
+            return [Action.COUP]
         actions = list(Action)
         if self.coins < 3:
             actions = [a for a in actions if a != Action.ASSASSINATE]
@@ -42,87 +48,116 @@ class Player:
             actions = [a for a in actions if a != Action.COUP]
         return actions
 
+
 class CoupEnv(gym.Env):
-    metadata = {"render_modes": ["human"], "render_fps": 4}
-
     def __init__(self):
-        super().__init__()
-        self.num_players = 2
+        super(CoupEnv, self).__init__()
+        self.players = [Player(i) for i in range(NUM_PLAYERS)]
+        self.current_player = 0
         self.deck = []
-        self.players = [Player(i) for i in range(self.num_players)]
-        self.current_player_idx = 0
+        self.winner = None
 
-        # Obs space: each player’s coins (2), cards (2), alive flag (1)
-        self.observation_space = spaces.Box(low=0, high=10, shape=(self.num_players * 5,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=10, shape=(NUM_PLAYERS * 2,), dtype=np.int32)
         self.action_space = spaces.Discrete(len(Action))
 
     def reset(self, seed=None, options=None):
-        super().reset(seed=seed)
         self.deck = [card for card in Card] * 3
         random.shuffle(self.deck)
-        self.players = [Player(i) for i in range(self.num_players)]
-        for player in self.players:
-            player.cards = [self.deck.pop(), self.deck.pop()]
-            player.coins = 2
-            player.alive = True
-        self.current_player_idx = 0
+        for p in self.players:
+            p.coins = 2
+            p.alive = True
+            p.cards = [self.deck.pop(), self.deck.pop()]
+        self.current_player = 0
         return self._get_obs(), {}
 
     def _get_obs(self):
         obs = []
         for p in self.players:
-            obs.extend([
-                p.coins,
-                p.cards[0].value if len(p.cards) > 0 else -1,
-                p.cards[1].value if len(p.cards) > 1 else -1,
-                int(p.alive),
-                len(p.cards)
-            ])
-        return np.array(obs, dtype=np.float32)
+            obs.append(p.coins)
+            obs.append(len(p.cards))
+        return np.array(obs, dtype=np.int32)
 
-    def step(self, action):
-        player = self.players[self.current_player_idx]
-        opponent = self.players[1 - self.current_player_idx]
+    def step(self, action_idx):
+        action = Action(action_idx)
+        player = self.players[self.current_player]
 
+        if not player.alive:
+            self._next_player()
+            return self._get_obs(), 0, False, False, {}
+
+        target = self._select_target()
         reward = 0
         terminated = False
-        truncated = False
 
-        # Action logic
-        if not player.alive:
-            self.current_player_idx = 1 - self.current_player_idx
-            return self._get_obs(), reward, terminated, truncated, {}
+        # Get legal actions
+        legal_actions = player.get_legal_actions()
 
-        if action == Action.INCOME.value:
+        # Special Coup override rule at 10+ coins
+        if player.coins >= 10 and action != Action.COUP:
+            # Enforce mandatory Coup
+            reward = -10  # big penalty for illegal skip of coup
+            terminated = False
+            self._next_player()
+            return self._get_obs(), reward, terminated, False, {
+                "reason": "Coup required with 10+ coins"
+            }
+
+        # ILLEGAL ACTION handling
+        if action not in legal_actions:
+            # Option A (preferred): block and penalize
+            reward = -5
+            terminated = False
+            self._next_player()
+            return self._get_obs(), reward, terminated, False, {
+                "reason": f"Illegal action: {action.name}"
+            }
+
+        # LEGAL ACTIONS
+        if action == Action.INCOME:
             player.coins += 1
-        elif action == Action.FOREIGN_AID.value:
+        elif action == Action.FOREIGN_AID:
             player.coins += 2
-        elif action == Action.COUP.value and player.coins >= 7:
-            player.coins -= 7
-            opponent.lose_influence()
-        elif action == Action.TAX.value:
+        elif action == Action.TAX:
             player.coins += 3
-        elif action == Action.ASSASSINATE.value and player.coins >= 3:
+        elif action == Action.COUP and target:
+            player.coins -= 7
+            target.lose_influence()
+        elif action == Action.ASSASSINATE and target:
             player.coins -= 3
-            opponent.lose_influence()
-        elif action == Action.STEAL.value:
-            stolen = min(2, opponent.coins)
-            opponent.coins -= stolen
+            target.lose_influence()
+        elif action == Action.STEAL and target:
+            stolen = min(2, target.coins)
+            target.coins -= stolen
             player.coins += stolen
-        elif action == Action.EXCHANGE.value:
-            drawn = [self.deck.pop(), self.deck.pop()]
-            self.deck.extend(player.cards)
+        elif action == Action.EXCHANGE:
+            drawn = [self.deck.pop() for _ in range(2)]
+            self.deck.extend(drawn)
             random.shuffle(self.deck)
-            player.cards = drawn[:2]
 
-        # Check if opponent died
-        if not opponent.alive:
-            reward = 1  # win reward
+        # Check win condition
+        if self._check_win(player):
+            reward = 1
             terminated = True
 
-        self.current_player_idx = 1 - self.current_player_idx
-        return self._get_obs(), reward, terminated, truncated, {}
+        self._next_player()
+        return self._get_obs(), reward, terminated, False, {}
+
+
+    def _check_win(self, player):
+        alive_players = [p for p in self.players if p.alive]
+        return len(alive_players) == 1 and player.alive
+
+    def _select_target(self):
+        candidates = [p for p in self.players if p.id != self.current_player and p.alive]
+        return random.choice(candidates) if candidates else None
+
+    def _next_player(self):
+        while True:
+            self.current_player = (self.current_player + 1) % NUM_PLAYERS
+            if self.players[self.current_player].alive:
+                break
 
     def render(self):
         for p in self.players:
-            print(f"Player {p.id} | Coins: {p.coins} | Cards: {len(p.cards)} | Alive: {p.alive}")
+            print(f"Player {p.id}: {p.coins} coins, {len(p.cards)} cards, {'alive' if p.alive else 'dead'}")
+        print(f"Current player: {self.current_player}\n")

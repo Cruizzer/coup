@@ -2,7 +2,7 @@ from stable_baselines3 import PPO
 from coup_env import CoupEnv
 
 env = CoupEnv()
-model = PPO.load("ppo_coup")
+model = PPO.load("ppo_coup_multiagent")
 
 obs, _ = env.reset()
 done = False

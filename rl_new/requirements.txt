@@ -1,0 +1,5 @@
+pettingzoo
+stable-baselines3
+gym
+numpy
+torch
